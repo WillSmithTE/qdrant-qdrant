@@ -23,6 +23,7 @@ use super::config::SegmentOptimizerConfig;
 use crate::locked_segment::LockedSegment;
 use crate::operations::optimization::OptimizerThresholds;
 use crate::optimize::{OptimizationPaths, OptimizationStrategy, execute_optimization};
+use fs4::available_space;
 use crate::segment_holder::locked::LockedSegmentHolder;
 use crate::segment_holder::{SegmentHolder, SegmentId};
 
@@ -138,6 +139,28 @@ pub trait SegmentOptimizer: Sync {
 
     /// Build temp segment
     fn temp_segment(&self, save_version: bool) -> OperationResult<LockedSegment> {
+        // Check available disk space before creating a temp segment.
+        // Optimization creates a copy of the segment data, which can require
+        // significant disk space. If there is not enough space, return an
+        // error instead of panicking mid-optimization.
+        let temp_path = self.temp_path();
+        if let Ok(available) = available_space(temp_path) {
+            // Estimate the space needed: the temp segment is roughly the same
+            // size as the segment being optimized. We use a conservative
+            // estimate of 2x the segment directory size (matching the check
+            // in optimize.rs::check_segments_size).
+            if let Ok(segment_size) = common::disk::dir_disk_size(self.segments_path()) {
+                let needed = segment_size * 2;
+                if available < needed {
+                    return Err(OperationError::service_error(format!(
+                        "Not enough disk space for optimization temp segment. \
+                         Needed: {}, available: {}",
+                        needed, available
+                    )));
+                }
+            }
+        }
+
         let config = self.segment_optimizer_config().plain_segment_config();
         Ok(LockedSegment::new(build_segment(
             self.segments_path(),
