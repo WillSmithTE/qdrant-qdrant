@@ -928,6 +928,8 @@ pub enum CollectionError {
     ForwardProxyError { peer_id: PeerId, error: Box<Self> },
     #[error("Out of memory, free: {free}, {description}")]
     OutOfMemory { description: String, free: u64 },
+    #[error("Out of disk space: {description}")]
+    OutOfDisk { description: String },
     #[error("Timeout error: {description}")]
     Timeout { description: String },
     #[error("Precondition failed: {description}")]
