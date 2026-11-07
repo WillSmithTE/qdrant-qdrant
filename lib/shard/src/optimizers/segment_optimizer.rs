@@ -1,3 +1,4 @@
+use fs4::available_space;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
@@ -138,6 +139,18 @@ pub trait SegmentOptimizer: Sync {
 
     /// Build temp segment
     fn temp_segment(&self, save_version: bool) -> OperationResult<LockedSegment> {
+        let temp_path = self.temp_path();
+        if let Ok(available) = available_space(temp_path) {
+            if let Ok(segment_size) = common::disk::dir_disk_size(self.segments_path()) {
+                let needed = segment_size.saturating_mul(2);
+                if available < needed {
+                    return Err(OperationError::service_error(format!(
+                        "Not enough disk space for optimization temp segment. Needed: {needed}, available: {available}"
+                    )));
+                }
+            }
+        }
+
         let config = self.segment_optimizer_config().plain_segment_config();
         Ok(LockedSegment::new(build_segment(
             self.segments_path(),
